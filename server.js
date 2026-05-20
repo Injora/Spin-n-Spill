@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -96,6 +97,38 @@ function getRoomForSocket(socketId) {
 // ─── Socket.io ───────────────────────────────────────────────────
 io.on('connection', (socket) => {
   console.log(`⚡ Connected: ${socket.id}`);
+
+  // ── Get ICE/TURN Configuration securely ──
+  socket.on('get_ice_config', (cb) => {
+    const iceServers = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' }
+    ];
+
+    if (process.env.TURN_URL && process.env.TURN_USERNAME && process.env.TURN_PASSWORD) {
+      iceServers.push(
+        {
+          urls: `turn:${process.env.TURN_URL}:443?transport=udp`,
+          username: process.env.TURN_USERNAME,
+          credential: process.env.TURN_PASSWORD
+        },
+        {
+          urls: `turn:${process.env.TURN_URL}:443?transport=tcp`,
+          username: process.env.TURN_USERNAME,
+          credential: process.env.TURN_PASSWORD
+        },
+        {
+          urls: `turns:${process.env.TURN_URL}:443?transport=tcp`,
+          username: process.env.TURN_USERNAME,
+          credential: process.env.TURN_PASSWORD
+        }
+      );
+    }
+    cb({ iceServers });
+  });
 
   // ── Create Room ──
   socket.on('create_room', ({ name }, cb) => {

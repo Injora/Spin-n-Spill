@@ -23,6 +23,7 @@ let state = {
   selectedPlayerId: null,
   peerConnections: {},
   localStream: null,
+  iceServers: null,
 };
 
 // ── DOM Refs ──
@@ -435,45 +436,21 @@ async function startLocalCamera() {
   }
 }
 
-// ── ICE Server Configuration (Production-Ready) ──
-// Swap the TURN placeholders with your Metered.ca / Twilio / Xirsys credentials before deploying.
-const ICE_SERVERS = {
-  iceServers: [
-    // ── Free public STUN servers ──
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-
-    // ── TURN server (REQUIRED for strict NAT / corporate Wi-Fi) ──
-    // Replace these placeholders with your real credentials:
-    //   Metered.ca  → Dashboard > TURN Credentials
-    //   Twilio      → Account > NTS credentials
-    {
-      urls: 'turn:YOUR_TURN_URL_HERE:443?transport=udp',
-      username: 'YOUR_TURN_USERNAME_HERE',
-      credential: 'YOUR_TURN_PASSWORD_HERE'
-    },
-    {
-      urls: 'turn:YOUR_TURN_URL_HERE:443?transport=tcp',
-      username: 'YOUR_TURN_USERNAME_HERE',
-      credential: 'YOUR_TURN_PASSWORD_HERE'
-    },
-    {
-      urls: 'turns:YOUR_TURN_URL_HERE:443?transport=tcp',
-      username: 'YOUR_TURN_USERNAME_HERE',
-      credential: 'YOUR_TURN_PASSWORD_HERE'
-    }
-  ],
-  iceCandidatePoolSize: 10
-};
-
 // Connection timeout — if no track arrives within this window, show fallback
 const WEBRTC_TIMEOUT_MS = 15000;
 
+// Fetch ICE Servers configuration from server on start
+function fetchIceConfig() {
+  socket.emit('get_ice_config', (res) => {
+    if (res && res.iceServers) {
+      state.iceServers = res;
+      console.log('🔒 Secure ICE configuration loaded from server');
+    }
+  });
+}
+
 function createPeerConnection(targetId, stream) {
-  const pc = new RTCPeerConnection(ICE_SERVERS);
+  const pc = new RTCPeerConnection(state.iceServers || undefined);
   state.peerConnections[targetId] = pc;
 
   stream.getTracks().forEach(track => pc.addTrack(track, stream));
@@ -508,7 +485,7 @@ function createPeerConnection(targetId, stream) {
 }
 
 socket.on('webrtc_offer', async ({ senderId, offer }) => {
-  const pc = new RTCPeerConnection(ICE_SERVERS);
+  const pc = new RTCPeerConnection(state.iceServers || undefined);
   state.peerConnections[senderId] = pc;
 
   let trackReceived = false;
@@ -742,6 +719,7 @@ function escHtml(str) {
 
 // ── Init ──
 checkJoinUrl();
+fetchIceConfig();
 
 // ══════════════════════════════════════════════════════════════
 //  PRIVACY & ANTI-SCREENSHOT
