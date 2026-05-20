@@ -15,6 +15,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/join/:code', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', rooms: rooms.size });
+});
 const rooms = new Map();
 const PLAYER_COLORS = [
   '#f43f5e', '#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b',
