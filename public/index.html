@@ -98,6 +98,19 @@
       <p class="text-sm text-gray-400 mt-2">Mode: <span id="guest-mode" class="font-bold text-gray-700">30</span> Spins
       </p>
     </div>
+
+    <!-- Lobby Chat -->
+    <div class="sketch-card w-full max-w-lg mt-6 flex flex-col" style="height: 220px;">
+      <h3 class="text-lg font-bold text-gray-600 px-4 pt-3 pb-1 border-b border-gray-200">💬 Lobby Chat</h3>
+      <div id="lobby-chat-messages" class="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar"></div>
+      <div class="p-3 border-t border-gray-200">
+        <div class="flex gap-2">
+          <input id="lobby-chat-input" type="text" maxlength="500" placeholder="Say hi to everyone..."
+            class="sketch-input flex-1 text-sm py-2" />
+          <button id="btn-lobby-send" class="btn-sketch btn-send px-4 py-2">Send</button>
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- ═══════════ GAME SCREEN ═══════════ -->

@@ -143,6 +143,16 @@ io.on('connection', (socket) => {
         socket.join(code);
         console.log(`⚡ ${name} reconnected to room ${code}`);
         io.to(code).emit('update_players', getPublicPlayers(room));
+
+        // Notify everyone that the player reconnected
+        const reconnectMsg = {
+          type: 'system',
+          text: `🔄 ${name.trim()} reconnected!`,
+          timestamp: Date.now()
+        };
+        room.messages.push(reconnectMsg);
+        io.to(code).emit('receive_chat_message', reconnectMsg);
+
         return cb({
           code: room.code,
           players: getPublicPlayers(room),
@@ -171,6 +181,16 @@ io.on('connection', (socket) => {
 
     console.log(`👤 ${name} joined room ${code}`);
     io.to(code).emit('update_players', getPublicPlayers(room));
+
+    // Notify everyone that a new player joined
+    const joinMsg = {
+      type: 'system',
+      text: `👋 ${name.trim()} joined the room!`,
+      timestamp: Date.now()
+    };
+    room.messages.push(joinMsg);
+    io.to(code).emit('receive_chat_message', joinMsg);
+
     cb({
       code: room.code,
       players: getPublicPlayers(room),

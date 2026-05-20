@@ -652,10 +652,18 @@ function sendChat() {
 }
 
 socket.on('receive_chat_message', (msg) => {
-  const container = $('#chat-messages');
+  appendChatMessage(msg);
+});
+
+function appendChatMessage(msg) {
+  const container = state.gameStarted ? $('#chat-messages') : $('#lobby-chat-messages');
+  if (!container) return;
   const div = document.createElement('div');
 
-  if (msg.type === 'truth_answer') {
+  if (msg.type === 'system') {
+    div.className = 'chat-msg system';
+    div.textContent = msg.text;
+  } else if (msg.type === 'truth_answer') {
     div.className = 'chat-msg truth-answer';
     div.innerHTML = `
       <span class="msg-badge" style="background:rgba(6,182,212,0.3);color:#67e8f9">TRUTH</span>
@@ -670,16 +678,25 @@ socket.on('receive_chat_message', (msg) => {
 
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
-});
+}
 
 function addSystemMessage(text) {
-  const container = $('#chat-messages');
-  if (!container) return;
-  const div = document.createElement('div');
-  div.className = 'chat-msg system';
-  div.textContent = text;
-  container.appendChild(div);
-  container.scrollTop = container.scrollHeight;
+  appendChatMessage({ type: 'system', text });
+}
+
+// ── Lobby Chat Handlers ──
+$('#btn-lobby-send')?.addEventListener('click', sendLobbyChat);
+$('#lobby-chat-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendLobbyChat();
+});
+
+function sendLobbyChat() {
+  const input = $('#lobby-chat-input');
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+  socket.emit('send_chat_message', { text });
+  input.value = '';
 }
 
 // ── Chat Toggle (mobile) ──
@@ -701,6 +718,45 @@ function escHtml(str) {
   const d = document.createElement('div');
   d.textContent = str;
   return d.innerHTML;
+}
+
+// ── Rejoin Handler ──
+function checkRejoin() {
+  const name = sessionStorage.getItem('spin_spill_name');
+  const code = sessionStorage.getItem('spin_spill_code');
+  if (name && code) {
+    console.log(`🔄 Attempting automatic rejoin for ${name} in room ${code}`);
+    socket.emit('join_room', { code, name }, (res) => {
+      if (res.error) {
+        console.warn('⚠️ Auto-rejoin failed:', res.error);
+        sessionStorage.removeItem('spin_spill_name');
+        sessionStorage.removeItem('spin_spill_code');
+        return;
+      }
+      state.myName = name;
+      state.myId = socket.id;
+      state.roomCode = res.code;
+      state.isHost = res.isHost;
+      state.players = res.players;
+      state.selectedBottle = res.settings.bottle;
+      state.mode = res.settings.mode;
+
+      if (res.messages) {
+        res.messages.forEach(msg => {
+          appendChatMessage(msg);
+        });
+      }
+
+      if (res.gameStarted) {
+        state.gameStarted = true;
+        state.maxSpins = res.settings.mode;
+        showScreen('game');
+        initGame();
+      } else {
+        enterLobby();
+      }
+    });
+  }
 }
 
 // ── Init ──
