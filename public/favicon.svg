@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  <!-- Beige Paper Background -->
+  <rect width="100%" height="100%" fill="#f5f0e1" />
+
+  <!-- Wobbly Outer Square Box -->
+  <path d="M 11 13 L 89 10 L 87 87 L 13 89 Z" fill="none" stroke="#2d2d2d" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- Left Black Clockwise Arc -->
+  <path d="M 50 25 A 23 23 0 0 0 50 71" fill="none" stroke="#2d2d2d" stroke-width="6" stroke-linecap="round" />
+  
+  <!-- Left Arrowhead at Bottom Center (pointing down-right) -->
+  <path d="M 43 68 L 50 71 L 49 63" fill="none" stroke="#2d2d2d" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- Right Cyan Counter-Clockwise Arc -->
+  <path d="M 50 71 A 23 23 0 0 0 50 25" fill="none" stroke="#56ccf2" stroke-width="6" stroke-linecap="round" />
+  
+  <!-- Right Arrowhead at Top Center (pointing up-left) -->
+  <path d="M 57 28 L 50 25 L 51 33" fill="none" stroke="#56ccf2" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- Cyan Droplet (Spill) hanging at the bottom center -->
+  <path d="M 50 70 C 46 73 46 86 50 94 C 54 86 54 73 50 70 Z" fill="#56ccf2" />
+</svg>
