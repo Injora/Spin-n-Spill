@@ -522,7 +522,9 @@ function createPeerConnection(targetId, stream) {
   console.log(`[WebRTC → ${targetId}] Creating peer connection`);
   const pc = new RTCPeerConnection(state.iceServers || undefined);
   state.peerConnections[targetId] = pc;
-  state.iceQueues[targetId] = [];
+  
+  // Preserve existing queued candidates that arrived before peer connection was initialized!
+  state.iceQueues[targetId] = state.iceQueues[targetId] || [];
 
   stream.getTracks().forEach(track => {
     console.log(`[WebRTC → ${targetId}] Adding track: ${track.kind}`);
@@ -563,7 +565,9 @@ socket.on('webrtc_offer', async ({ senderId, offer }) => {
   console.log(`[WebRTC ← ${senderId}] Received WebRTC offer`);
   const pc = new RTCPeerConnection(state.iceServers || undefined);
   state.peerConnections[senderId] = pc;
-  state.iceQueues[senderId] = [];
+  
+  // Preserve existing queued candidates that arrived before peer connection was initialized!
+  state.iceQueues[senderId] = state.iceQueues[senderId] || [];
 
   let trackReceived = false;
 
@@ -642,20 +646,22 @@ socket.on('webrtc_answer', async ({ senderId, answer }) => {
 });
 
 socket.on('webrtc_ice', async ({ senderId, candidate }) => {
+  // Always initialize candidate queue for the peer to prevent dropped packets
+  if (!state.iceQueues[senderId]) {
+    state.iceQueues[senderId] = [];
+  }
+
   const pc = state.peerConnections[senderId];
-  if (pc) {
-    if (pc.remoteDescription && pc.remoteDescription.type) {
-      try {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
-        console.log(`[WebRTC ← ${senderId}] Added ICE candidate immediately`);
-      } catch (err) {
-        console.warn(`[WebRTC ← ${senderId}] Failed to add ICE candidate:`, err);
-      }
-    } else {
-      console.log(`[WebRTC ← ${senderId}] Queueing ICE candidate (remoteDescription not set)`);
-      if (!state.iceQueues[senderId]) state.iceQueues[senderId] = [];
-      state.iceQueues[senderId].push(candidate);
+  if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      console.log(`[WebRTC ← ${senderId}] Added ICE candidate immediately`);
+    } catch (err) {
+      console.warn(`[WebRTC ← ${senderId}] Failed to add ICE candidate immediately:`, err);
     }
+  } else {
+    console.log(`[WebRTC ← ${senderId}] Queueing ICE candidate (remoteDescription not set or connection uninitialized)`);
+    state.iceQueues[senderId].push(candidate);
   }
 });
 
