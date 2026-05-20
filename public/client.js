@@ -1,15 +1,8 @@
-// ══════════════════════════════════════════════════════════════
-//  Spin & Spill — Client
-// ══════════════════════════════════════════════════════════════
 
 const socket = io();
-
-// ── Handle Connection Disconnect & Reset Photo UI if frozen ──
 socket.on('disconnect', (reason) => {
   console.warn('⚠️ Disconnected from server:', reason);
   addSystemMessage('⚠️ Disconnected from server. Reconnecting...');
-  
-  // If the upload was currently loading/submitting, reset UI so it doesn't freeze
   const waitingLabel = $('#dare-waiting-label');
   if (waitingLabel && waitingLabel.textContent.includes('Submitting')) {
     $('#dare-waiting-zone').classList.add('hidden');
@@ -21,10 +14,6 @@ socket.on('disconnect', (reason) => {
     }
   }
 });
-
-
-
-// ── State ──
 let state = {
   myId: null,
   myName: '',
@@ -43,24 +32,18 @@ let state = {
   localStream: null,
   iceServers: null,
 };
-
-// ── DOM Refs ──
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
-
 const screens = {
   home: $('#screen-home'),
   lobby: $('#screen-lobby'),
   game: $('#screen-game'),
   gameover: $('#screen-gameover'),
 };
-
 function showScreen(name) {
   Object.values(screens).forEach(s => s.classList.remove('active'));
   screens[name].classList.add('active');
 }
-
-// ── Check URL for join code ──
 function checkJoinUrl() {
   const match = window.location.pathname.match(/\/join\/([A-Za-z0-9]{6})/);
   if (match) {
@@ -68,11 +51,9 @@ function checkJoinUrl() {
     window.history.replaceState({}, '', '/');
   }
 }
-
 // ══════════════════════════════════════════════════════════════
 //  HOME SCREEN
 // ══════════════════════════════════════════════════════════════
-
 $('#btn-create').addEventListener('click', () => {
   const name = $('#input-name').value.trim();
   if (!name) return showError('home', 'Please enter your name');
@@ -85,15 +66,12 @@ $('#btn-create').addEventListener('click', () => {
     state.players = res.players;
     state.selectedBottle = res.settings.bottle;
     state.mode = res.settings.mode;
-
     // Save to sessionStorage for refresh persistence
     sessionStorage.setItem('spin_spill_name', state.myName);
     sessionStorage.setItem('spin_spill_code', state.roomCode);
-
     enterLobby();
   });
 });
-
 $('#btn-join').addEventListener('click', () => {
   const name = $('#input-name').value.trim();
   const code = $('#input-code').value.trim().toUpperCase();
@@ -108,11 +86,9 @@ $('#btn-join').addEventListener('click', () => {
     state.players = res.players;
     state.selectedBottle = res.settings.bottle;
     state.mode = res.settings.mode;
-
     // Save to sessionStorage for refresh persistence
     sessionStorage.setItem('spin_spill_name', state.myName);
     sessionStorage.setItem('spin_spill_code', state.roomCode);
-
     if (res.gameStarted) {
       state.gameStarted = true;
       state.maxSpins = res.settings.mode;
@@ -121,7 +97,6 @@ $('#btn-join').addEventListener('click', () => {
     } else {
       enterLobby();
     }
-
     if (res.messages) {
       res.messages.forEach(msg => {
         appendChatMessage(msg);
@@ -129,25 +104,21 @@ $('#btn-join').addEventListener('click', () => {
     }
   });
 });
-
 $('#input-name').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') $('#btn-create').click();
 });
 $('#input-code').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') $('#btn-join').click();
 });
-
 function showError(screen, msg) {
   const el = $(`#${screen}-error`);
   el.textContent = msg;
   el.classList.remove('hidden');
   setTimeout(() => el.classList.add('hidden'), 4000);
 }
-
 // ══════════════════════════════════════════════════════════════
 //  LOBBY
 // ══════════════════════════════════════════════════════════════
-
 function enterLobby() {
   showScreen('lobby');
   $('#lobby-code').textContent = state.roomCode;
@@ -155,10 +126,8 @@ function enterLobby() {
   $('#lobby-link').textContent = link;
   $('#lobby-link').onclick = () => { navigator.clipboard.writeText(link); $('#lobby-link').textContent = 'Copied!'; setTimeout(() => $('#lobby-link').textContent = link, 2000); };
   $('#btn-copy-code').onclick = () => { navigator.clipboard.writeText(state.roomCode); };
-
   const lobbyChat = $('#lobby-chat-messages');
   if (lobbyChat) lobbyChat.innerHTML = '';
-
   if (state.isHost) {
     $('#host-controls').classList.remove('hidden');
     $('#guest-waiting').classList.add('hidden');
@@ -169,7 +138,6 @@ function enterLobby() {
   }
   renderLobbyPlayers();
 }
-
 function renderLobbyPlayers() {
   const container = $('#lobby-players');
   container.innerHTML = state.players.map(p => `
@@ -183,7 +151,6 @@ function renderLobbyPlayers() {
     </div>
   `).join('');
 }
-
 function setupModeButtons() {
   $$('.mode-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -194,39 +161,32 @@ function setupModeButtons() {
     });
   });
 }
-
 $('#btn-start').addEventListener('click', () => {
   socket.emit('start_game', null, (res) => {
     if (res?.error) showError('lobby', res.error);
   });
 });
-
 // ── Lobby Socket Events ──
 socket.on('update_players', (players) => {
   state.players = players;
   if (!state.gameStarted) renderLobbyPlayers();
   if (state.gameStarted) renderPlayerCircle();
 });
-
 socket.on('bottle_selected', ({ bottleIndex }) => {
   state.selectedBottle = bottleIndex;
 });
-
 socket.on('mode_changed', ({ mode }) => {
   state.mode = mode;
   state.maxSpins = mode;
   if ($('#guest-mode')) $('#guest-mode').textContent = mode;
 });
-
 socket.on('host_changed', ({ newHostId, newHostName }) => {
   state.isHost = (newHostId === socket.id);
   addSystemMessage(`${newHostName} is now the host`);
 });
-
 // ══════════════════════════════════════════════════════════════
 //  GAME
 // ══════════════════════════════════════════════════════════════
-
 socket.on('game_started', ({ settings, players, spinnerIndex }) => {
   state.gameStarted = true;
   state.players = players;
@@ -236,15 +196,12 @@ socket.on('game_started', ({ settings, players, spinnerIndex }) => {
   state.currentSpin = 0;
   state.spinnerIndex = spinnerIndex;
   state.phase = 'idle';
-
   // Clear game chat messages for the new game!
   const gameChat = $('#chat-messages');
   if (gameChat) gameChat.innerHTML = '';
-
   showScreen('game');
   initGame();
 });
-
 function initGame() {
   $('#game-code').textContent = state.roomCode;
   $('#spin-max').textContent = state.maxSpins;
@@ -254,12 +211,10 @@ function initGame() {
   updateSpinButton();
   updateTurnIndicator();
   addSystemMessage('Game started! Let the spills begin!');
-
   // Show Close Room button for host only
   const closeBtn = $('#btn-close-room');
   if (closeBtn) closeBtn.classList.toggle('hidden', !state.isHost);
 }
-
 function updateBottleSVG() {
   // Sketchy hand-drawn cola bottle
   $('#spinning-bottle').innerHTML = `
@@ -278,7 +233,6 @@ function updateBottleSVG() {
       <path d="M21 70 Q19 80 20 95 Q21 100 20 110 Q19 120 21 130" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="2.5" stroke-linecap="round"/>
     </svg>`;
 }
-
 function renderPlayerCircle() {
   const circle = $('#player-circle');
   // Remove old nodes
@@ -288,7 +242,6 @@ function renderPlayerCircle() {
   const radius = containerSize * 0.42;
   const centerX = containerSize / 2;
   const centerY = containerSize / 2;
-
   state.players.forEach((p, i) => {
     const angle = ((360 / N) * i - 90) * (Math.PI / 180);
     const x = centerX + radius * Math.cos(angle);
@@ -305,34 +258,29 @@ function renderPlayerCircle() {
     circle.appendChild(node);
   });
 }
-
 function updateSpinButton() {
   const btn = $('#btn-spin');
   const isMyTurn = state.players[state.spinnerIndex]?.id === socket.id;
   const canSpin = (isMyTurn || state.isHost) && state.phase === 'idle';
   btn.classList.toggle('hidden', !canSpin);
 }
-
 function updateTurnIndicator() {
   const spinner = state.players[state.spinnerIndex];
   if (spinner) {
     $('#turn-name').textContent = spinner.id === socket.id ? 'Your Turn!' : spinner.name;
   }
 }
-
 // ── Spin ──
 $('#btn-spin').addEventListener('click', () => {
   if (state.phase !== 'idle') return;
   socket.emit('spin_bottle');
 });
-
 socket.on('bottle_result', ({ selectedPlayerId, selectedPlayerName, targetAngle, finalAngle, spinNumber, maxSpins }) => {
   state.phase = 'spinning';
   state.currentSpin = spinNumber;
   state.selectedPlayerId = selectedPlayerId;
   $('#spin-current').textContent = spinNumber;
   $('#btn-spin').classList.add('hidden');
-
   // Animate bottle
   const bottle = $('#spinning-bottle');
   bottle.style.transform = 'rotate(0deg)';
@@ -340,20 +288,17 @@ socket.on('bottle_result', ({ selectedPlayerId, selectedPlayerName, targetAngle,
   void bottle.offsetWidth; // force reflow
   bottle.classList.add('bottle-spinning');
   bottle.style.transform = `rotate(${targetAngle}deg)`;
-
   // Highlight selected player after spin
   setTimeout(() => {
     renderPlayerCircle();
     addSystemMessage(`Bottle landed on ${selectedPlayerName}!`);
   }, 4000);
 });
-
 // ── Phase Changes ──
 socket.on('phase_change', ({ phase, selectedPlayerId, selectedPlayerName }) => {
   state.phase = phase;
   state.selectedPlayerId = selectedPlayerId || state.selectedPlayerId;
   hideAllOverlays();
-
   if (phase === 'choosing') {
     if (selectedPlayerId === socket.id) {
       showChoiceOverlay(selectedPlayerName, true);
@@ -369,13 +314,11 @@ socket.on('phase_change', ({ phase, selectedPlayerId, selectedPlayerName }) => {
     updateTurnIndicator();
   }
 });
-
 function hideAllOverlays() {
   $('#choice-overlay').classList.add('hidden');
   $('#truth-overlay').classList.add('hidden');
   $('#dare-overlay').classList.add('hidden');
 }
-
 function showChoiceOverlay(playerName, isMe) {
   const overlay = $('#choice-overlay');
   overlay.classList.remove('hidden');
@@ -392,17 +335,14 @@ function showChoiceOverlay(playerName, isMe) {
     $('#btn-dare').classList.add('hidden');
   }
 }
-
 $('#btn-truth').addEventListener('click', () => {
   socket.emit('choose_truth_or_dare', { choice: 'truth' });
   hideAllOverlays();
 });
-
 $('#btn-dare').addEventListener('click', () => {
   socket.emit('choose_truth_or_dare', { choice: 'dare' });
   hideAllOverlays();
 });
-
 // ── Truth ──
 function showTruthOverlay(isMe, playerName) {
   const overlay = $('#truth-overlay');
@@ -421,43 +361,36 @@ function showTruthOverlay(isMe, playerName) {
     $('#truth-waiting').classList.remove('hidden');
   }
 }
-
 $('#btn-submit-truth').addEventListener('click', () => {
   const answer = $('#truth-input').value.trim();
   if (!answer) return;
   socket.emit('submit_truth', { answer });
   hideAllOverlays();
 });
-
 $('#truth-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     $('#btn-submit-truth').click();
   }
 });
-
 socket.on('truth_submitted', ({ playerName }) => {
   hideAllOverlays();
   addSystemMessage(`${playerName} spilled the truth! 💬`);
 });
-
 // ── Dare + Photo Upload ──
 function showDareOverlay(isMe, playerName) {
   const overlay = $('#dare-overlay');
   overlay.classList.remove('hidden');
-  
   // Hide Polaroid display and Host controls initially
   $('#dare-polaroid').classList.add('hidden');
   $('#dare-host-controls').classList.add('hidden');
   $('#dare-image-preview').src = '';
   $('#dare-image-caption').textContent = '';
-
   // Reset file upload inputs
   $('#dare-file-input').value = '';
   $('#dare-file-name').textContent = 'No photo selected';
   $('#btn-submit-photo').classList.add('hidden');
   $('#dare-upload-error').classList.add('hidden');
-
   if (isMe) {
     $('#dare-player-label').textContent = "You've been chosen for a DARE! Upload your photo proof below.";
     $('#dare-upload-zone').classList.remove('hidden');
@@ -470,24 +403,19 @@ function showDareOverlay(isMe, playerName) {
   }
   addSystemMessage(`🔥 ${playerName} chose DARE! Photo upload is pending...`);
 }
-
 // ── File Selection & FileReader ──
 $('#dare-file-input')?.addEventListener('change', (e) => {
   const file = e.target.files[0];
   const errEl = $('#dare-upload-error');
   const nameEl = $('#dare-file-name');
   const btnSubmit = $('#btn-submit-photo');
-  
   errEl.classList.add('hidden');
-  
   if (!file) {
     nameEl.textContent = 'No photo selected';
     btnSubmit.classList.add('hidden');
     return;
   }
-
   nameEl.textContent = file.name;
-
   // Strict 3MB size limit check
   const MAX_SIZE = 3 * 1024 * 1024; // 3MB
   if (file.size > MAX_SIZE) {
@@ -496,16 +424,13 @@ $('#dare-file-input')?.addEventListener('change', (e) => {
     btnSubmit.classList.add('hidden');
     return;
   }
-
   btnSubmit.classList.remove('hidden');
 });
-
 // ── Submit Photo Click ──
 $('#btn-submit-photo')?.addEventListener('click', () => {
   const fileInput = $('#dare-file-input');
   const file = fileInput.files[0];
   if (!file) return;
-
   const reader = new FileReader();
   reader.onload = (event) => {
     const img = new Image();
@@ -514,7 +439,6 @@ $('#btn-submit-photo')?.addEventListener('click', () => {
       const canvas = document.createElement('canvas');
       let width = img.width;
       let height = img.height;
-      
       // Limit dimensions to 800px while keeping aspect ratio
       const MAX_DIM = 800;
       if (width > MAX_DIM || height > MAX_DIM) {
@@ -526,19 +450,14 @@ $('#btn-submit-photo')?.addEventListener('click', () => {
           height = MAX_DIM;
         }
       }
-      
       canvas.width = width;
       canvas.height = height;
-      
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, width, height);
-      
       // Compress to 60% quality JPEG Base64
       const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
-      
       console.log('📸 Uploading compressed base64 dare photo...');
       socket.emit('submit_dare_photo', { photo: compressedDataUrl });
-      
       // Hide upload zone once submitted
       $('#dare-upload-zone').classList.add('hidden');
       $('#dare-waiting-zone').classList.remove('hidden');
@@ -548,65 +467,53 @@ $('#btn-submit-photo')?.addEventListener('click', () => {
   };
   reader.readAsDataURL(file);
 });
-
 // ── Host Approval Click Handlers ──
 $('#btn-dare-approve')?.addEventListener('click', () => {
   if (state.isHost) {
     socket.emit('approve_dare');
   }
 });
-
 $('#btn-dare-reject')?.addEventListener('click', () => {
   if (state.isHost) {
     socket.emit('reject_dare');
   }
 });
-
 // ── Dare Photo Socket Listeners ──
 socket.on('dare_photo_received', ({ photo, playerName }) => {
   console.log(`📸 Displaying dare photo for ${playerName}`);
-  
   // Hide loading/waiting spinners
   $('#dare-waiting-zone').classList.add('hidden');
   $('#dare-upload-zone').classList.add('hidden');
-
   // Display photo inside polaroid frame
   const polaroid = $('#dare-polaroid');
   const preview = $('#dare-image-preview');
   const caption = $('#dare-image-caption');
-  
   if (preview && polaroid && caption) {
     preview.src = photo;
     caption.textContent = `${playerName}'s Dare!`;
     polaroid.classList.remove('hidden');
   }
-
   // If we are host, show approval buttons!
   if (state.isHost) {
     $('#dare-host-controls').classList.remove('hidden');
   }
 });
-
 socket.on('dare_photo_approved', ({ playerName }) => {
   hideAllOverlays();
   addSystemMessage(`✅ Host approved ${playerName}'s dare! (+3pts)`);
 });
-
 socket.on('dare_photo_rejected', ({ playerName }) => {
   hideAllOverlays();
   addSystemMessage(`❌ Host rejected ${playerName}'s dare!`);
 });
-
 // ── Turn Skipped due to Disconnect ──
 socket.on('turn_skipped_disconnect', ({ playerName }) => {
   hideAllOverlays();
   addSystemMessage(`⚠️ Turn skipped: ${playerName} disconnected during their turn!`);
 });
-
 function stopAllMedia() {
   // WebRTC removed
 }
-
 // ── Next Turn ──
 socket.on('next_turn', ({ spinnerIndex, spinnerId, spinnerName, spinNumber, maxSpins }) => {
   state.spinnerIndex = spinnerIndex;
@@ -620,7 +527,6 @@ socket.on('next_turn', ({ spinnerIndex, spinnerId, spinnerName, spinNumber, maxS
   renderPlayerCircle();
   addSystemMessage(`${spinnerName}'s turn to spin!`);
 });
-
 // ── Game Over ──
 socket.on('game_over', ({ leaderboard }) => {
   state.gameStarted = false;
@@ -628,7 +534,6 @@ socket.on('game_over', ({ leaderboard }) => {
   showScreen('gameover');
   renderLeaderboard(leaderboard);
 });
-
 function renderLeaderboard(lb) {
   const ranks = ['🥇', '🥈', '🥉'];
   $('#leaderboard').innerHTML = lb.map((p, i) => `
@@ -643,20 +548,16 @@ function renderLeaderboard(lb) {
     </div>
   `).join('');
 }
-
 $('#btn-play-again').addEventListener('click', () => {
   window.location.reload();
 });
-
 // ══════════════════════════════════════════════════════════════
 //  CHAT
 // ══════════════════════════════════════════════════════════════
-
 $('#btn-send-chat').addEventListener('click', sendChat);
 $('#chat-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') sendChat();
 });
-
 function sendChat() {
   const input = $('#chat-input');
   const text = input.value.trim();
@@ -664,16 +565,13 @@ function sendChat() {
   socket.emit('send_chat_message', { text });
   input.value = '';
 }
-
 socket.on('receive_chat_message', (msg) => {
   appendChatMessage(msg);
 });
-
 function appendChatMessage(msg) {
   const container = state.gameStarted ? $('#chat-messages') : $('#lobby-chat-messages');
   if (!container) return;
   const div = document.createElement('div');
-
   if (msg.type === 'system') {
     div.className = 'chat-msg system';
     div.textContent = msg.text;
@@ -689,21 +587,17 @@ function appendChatMessage(msg) {
       <span class="msg-name" style="color:${msg.playerColor}">${escHtml(msg.playerName)}:</span>
       <span class="text-gray-600">${escHtml(msg.text)}</span>`;
   }
-
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
 }
-
 function addSystemMessage(text) {
   appendChatMessage({ type: 'system', text });
 }
-
 // ── Lobby Chat Handlers ──
 $('#btn-lobby-send')?.addEventListener('click', sendLobbyChat);
 $('#lobby-chat-input')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') sendLobbyChat();
 });
-
 function sendLobbyChat() {
   const input = $('#lobby-chat-input');
   if (!input) return;
@@ -712,7 +606,6 @@ function sendLobbyChat() {
   socket.emit('send_chat_message', { text });
   input.value = '';
 }
-
 // ── Chat Toggle (mobile) ──
 $('#btn-toggle-chat')?.addEventListener('click', () => {
   const panel = $('#chat-panel');
@@ -720,20 +613,17 @@ $('#btn-toggle-chat')?.addEventListener('click', () => {
   const body = $('#chat-body');
   body.style.display = panel.classList.contains('chat-collapsed') ? 'none' : 'flex';
 });
-
 // ── Player Left ──
 socket.on('player_left', ({ playerId }) => {
   const player = state.players.find(p => p.id === playerId);
   if (player) addSystemMessage(`${player.name} left the room`);
 });
-
 // ── Utility ──
 function escHtml(str) {
   const d = document.createElement('div');
   d.textContent = str;
   return d.innerHTML;
 }
-
 // ── Rejoin Handler ──
 function checkRejoin() {
   const name = sessionStorage.getItem('spin_spill_name');
@@ -754,7 +644,6 @@ function checkRejoin() {
       state.players = res.players;
       state.selectedBottle = res.settings.bottle;
       state.mode = res.settings.mode;
-
       if (res.gameStarted) {
         state.gameStarted = true;
         state.maxSpins = res.settings.mode;
@@ -763,7 +652,6 @@ function checkRejoin() {
       } else {
         enterLobby();
       }
-
       if (res.messages) {
         res.messages.forEach(msg => {
           appendChatMessage(msg);
@@ -772,17 +660,13 @@ function checkRejoin() {
     });
   }
 }
-
 // ── Init ──
 checkJoinUrl();
 checkRejoin();
-
 // ══════════════════════════════════════════════════════════════
 //  PRIVACY & ANTI-SCREENSHOT
 // ══════════════════════════════════════════════════════════════
-
 const privacyOverlay = $('#privacy-overlay');
-
 // Visibility change — hide game when tab/window is not focused
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
@@ -791,14 +675,12 @@ document.addEventListener('visibilitychange', () => {
     privacyOverlay?.classList.remove('active');
   }
 });
-
 window.addEventListener('blur', () => {
   privacyOverlay?.classList.add('active');
 });
 window.addEventListener('focus', () => {
   privacyOverlay?.classList.remove('active');
 });
-
 // TEMPORARY DEV MODE: Blockers commented out for easier DevTools inspection.
 // Remember to uncomment this entire section for strict production anti-cheat security!
 /*
@@ -824,18 +706,15 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 });
-
 document.addEventListener('keyup', (e) => {
   if (e.key === 'PrintScreen') {
     e.preventDefault();
   }
 });
 */
-
 // ══════════════════════════════════════════════════════════════
 //  CLOSE ROOM / ROOM TERMINATION
 // ══════════════════════════════════════════════════════════════
-
 $('#btn-close-room')?.addEventListener('click', () => {
   if (!state.isHost) return;
   if (confirm('Close this room? All session data will be permanently wiped.')) {
@@ -843,12 +722,10 @@ $('#btn-close-room')?.addEventListener('click', () => {
     socket.emit('terminate_room');
   }
 });
-
 socket.on('room_closed', () => {
   // Clear persistent session details
   sessionStorage.removeItem('spin_spill_name');
   sessionStorage.removeItem('spin_spill_code');
-  
   // Stop all camera/WebRTC
   stopAllMedia();
   // Reset state
@@ -858,7 +735,6 @@ socket.on('room_closed', () => {
   state.roomCode = '';
   // Return to home
   showScreen('home');
-  
   if (!state.isHost) {
     alert('The host has closed the room. All data has been wiped.');
   }
