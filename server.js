@@ -100,37 +100,7 @@ function getRoomForSocket(socketId) {
 io.on('connection', (socket) => {
   console.log(`⚡ Connected: ${socket.id}`);
 
-  // ── Get ICE/TURN Configuration securely ──
-  socket.on('get_ice_config', (cb) => {
-    const iceServers = [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' }
-    ];
 
-    if (process.env.TURN_URL && process.env.TURN_USERNAME && process.env.TURN_PASSWORD) {
-      iceServers.push(
-        {
-          urls: `turn:${process.env.TURN_URL}:443?transport=udp`,
-          username: process.env.TURN_USERNAME,
-          credential: process.env.TURN_PASSWORD
-        },
-        {
-          urls: `turn:${process.env.TURN_URL}:443?transport=tcp`,
-          username: process.env.TURN_USERNAME,
-          credential: process.env.TURN_PASSWORD
-        },
-        {
-          urls: `turns:${process.env.TURN_URL}:443?transport=tcp`,
-          username: process.env.TURN_USERNAME,
-          credential: process.env.TURN_PASSWORD
-        }
-      );
-    }
-    cb({ iceServers });
-  });
 
   // ── Create Room ──
   socket.on('create_room', ({ name }, cb) => {
@@ -352,8 +322,24 @@ io.on('connection', (socket) => {
     advanceSpin(room);
   });
 
-  // ── Dare Completed ──
-  socket.on('dare_completed', () => {
+  // ── Submit Dare Photo ──
+  socket.on('submit_dare_photo', ({ photo }) => {
+    const room = getRoomForSocket(socket.id);
+    if (!room || room.state.phase !== 'dare') return;
+    if (socket.id !== room.state.selectedPlayer) return;
+
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player) return;
+
+    console.log(`📸 Received dare photo upload from ${player.name} in room ${room.code}`);
+    io.to(room.code).emit('dare_photo_received', {
+      photo,
+      playerName: player.name
+    });
+  });
+
+  // ── Approve Dare Photo (Host Only) ──
+  socket.on('approve_dare', () => {
     const room = getRoomForSocket(socket.id);
     if (!room || room.state.phase !== 'dare') return;
     if (socket.id !== room.hostId) return;
@@ -364,11 +350,43 @@ io.on('connection', (socket) => {
       player.dareCount++;
     }
 
-    io.to(room.code).emit('dare_done', {
+    console.log(`✅ Host approved dare in room ${room.code}`);
+    io.to(room.code).emit('dare_photo_approved', {
       playerId: room.state.selectedPlayer,
       playerName: player?.name
     });
     io.to(room.code).emit('update_players', getPublicPlayers(room));
+
+    advanceSpin(room);
+  });
+
+  // ── Reject Dare Photo (Host Only) ──
+  socket.on('reject_dare', () => {
+    const room = getRoomForSocket(socket.id);
+    if (!room || room.state.phase !== 'dare') return;
+    if (socket.id !== room.hostId) return;
+
+    const player = room.players.find(p => p.id === room.state.selectedPlayer);
+    const funnyMessages = [
+      `oof, that dare was weaker than decaf coffee! ☕`,
+      `dare rejected! Better luck next time! 👎`,
+      `denied! Even a toddler would dare harder! 👶`,
+      `rejected! The jury has ruled: incomplete! 🧑‍⚖️`
+    ];
+    const msgText = funnyMessages[Math.floor(Math.random() * funnyMessages.length)];
+
+    const chatMsg = {
+      type: 'system',
+      text: `❌ Host rejected ${player ? player.name : 'player'}'s dare! ${msgText}`,
+      timestamp: Date.now()
+    };
+    room.messages.push(chatMsg);
+
+    console.log(`❌ Host rejected dare in room ${room.code}`);
+    io.to(room.code).emit('receive_chat_message', chatMsg);
+    io.to(room.code).emit('dare_photo_rejected', {
+      playerName: player?.name
+    });
 
     advanceSpin(room);
   });
@@ -391,27 +409,7 @@ io.on('connection', (socket) => {
     io.to(room.code).emit('receive_chat_message', msg);
   });
 
-  // ── WebRTC Signaling ──
-  socket.on('webrtc_offer', ({ targetId, offer }) => {
-    io.to(targetId).emit('webrtc_offer', {
-      senderId: socket.id,
-      offer
-    });
-  });
 
-  socket.on('webrtc_answer', ({ targetId, answer }) => {
-    io.to(targetId).emit('webrtc_answer', {
-      senderId: socket.id,
-      answer
-    });
-  });
-
-  socket.on('webrtc_ice', ({ targetId, candidate }) => {
-    io.to(targetId).emit('webrtc_ice', {
-      senderId: socket.id,
-      candidate
-    });
-  });
 
   // ── Terminate Room (Host Only) ──
   socket.on('terminate_room', () => {
@@ -459,11 +457,16 @@ io.on('connection', (socket) => {
     // or when the host explicitly calls terminate_room.
     // For now, as explicitly requested, the room is ONLY destroyed on terminate_room.
 
-    // If the selected player disconnected during their turn, reset phase to idle
+    // If the selected player disconnected during their turn, skip turn and advance
     if (room.state.selectedPlayer === socket.id &&
       ['choosing', 'truth', 'dare'].includes(room.state.phase)) {
-      room.state.phase = 'idle';
-      io.to(room.code).emit('phase_change', { phase: 'idle' });
+      const disconnectedName = player ? player.name : 'A player';
+      console.log(`⚠️ Active player ${disconnectedName} disconnected during turn. Skipping turn.`);
+      
+      io.to(room.code).emit('turn_skipped_disconnect', {
+        playerName: disconnectedName
+      });
+      advanceSpin(room);
     }
 
     io.to(room.code).emit('update_players', getPublicPlayers(room));

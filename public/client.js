@@ -409,307 +409,141 @@ socket.on('truth_submitted', ({ playerName }) => {
   addSystemMessage(`${playerName} spilled the truth! 💬`);
 });
 
-// ── Dare + Camera ──
+// ── Dare + Photo Upload ──
 function showDareOverlay(isMe, playerName) {
   const overlay = $('#dare-overlay');
   overlay.classList.remove('hidden');
-  $('#dare-local-video').classList.add('hidden');
-  $('#dare-remote-video').classList.add('hidden');
-  $('#dare-video-placeholder').classList.remove('hidden');
+  
+  // Hide Polaroid display and Host controls initially
+  $('#dare-polaroid').classList.add('hidden');
+  $('#dare-host-controls').classList.add('hidden');
+  $('#dare-image-preview').src = '';
+  $('#dare-image-caption').textContent = '';
+
+  // Reset file upload inputs
+  $('#dare-file-input').value = '';
+  $('#dare-file-name').textContent = 'No photo selected';
+  $('#btn-submit-photo').classList.add('hidden');
+  $('#dare-upload-error').classList.add('hidden');
 
   if (isMe) {
-    $('#dare-player-label').textContent = "Your dare is active! Camera is being turned on.";
-    $('#btn-dare-complete').classList.add('hidden');
-    startLocalCamera();
+    $('#dare-player-label').textContent = "You've been chosen for a DARE! Upload your photo proof below.";
+    $('#dare-upload-zone').classList.remove('hidden');
+    $('#dare-waiting-zone').classList.add('hidden');
   } else {
     $('#dare-player-label').textContent = `${playerName}'s dare is active!`;
-    $('#btn-dare-complete').classList.toggle('hidden', !state.isHost);
+    $('#dare-upload-zone').classList.add('hidden');
+    $('#dare-waiting-zone').classList.remove('hidden');
+    $('#dare-waiting-label').textContent = `Waiting for ${playerName} to upload their photo...`;
   }
-  addSystemMessage(`🔥 ${playerName} chose DARE! Camera is on!`);
+  addSystemMessage(`🔥 ${playerName} chose DARE! Photo upload is pending...`);
 }
 
-async function startLocalCamera() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    state.localStream = stream;
-    const video = $('#dare-local-video');
-    video.srcObject = stream;
-    video.classList.remove('hidden');
-    $('#dare-video-placeholder').classList.add('hidden');
-
-    // Set up WebRTC peer connections to broadcast to others
-    const otherPlayers = state.players.filter(p => p.id !== socket.id);
-    for (const player of otherPlayers) {
-      createPeerConnection(player.id, stream);
-    }
-  } catch (err) {
-    console.warn('Camera access denied:', err);
-    $('#dare-video-placeholder').innerHTML = `
-      <div class="text-center">
-        <div class="text-4xl mb-2">🚫</div>
-        <p class="text-red-400 text-sm">Camera access denied</p>
-        <p class="text-gray-500 text-xs mt-1">The dare continues without video</p>
-      </div>`;
-  }
-}
-
-// Connection timeout — if no track arrives within this window, show fallback
-const WEBRTC_TIMEOUT_MS = 15000;
-
-// Queue to hold ICE candidates if remote description is not yet set
-state.iceQueues = {};
-
-// Fetch ICE Servers configuration from server on start
-function fetchIceConfig() {
-  socket.emit('get_ice_config', (res) => {
-    if (res && res.iceServers) {
-      state.iceServers = res;
-      console.log('🔒 Secure ICE configuration loaded from server');
-    }
-  });
-}
-
-// Reconnect/rejoin helper for page refresh
-function checkRejoin() {
-  const savedName = sessionStorage.getItem('spin_spill_name');
-  const savedCode = sessionStorage.getItem('spin_spill_code');
-  if (savedName && savedCode) {
-    console.log(`🔄 Attempting auto-rejoin to room ${savedCode} as ${savedName}`);
-    socket.emit('join_room', { code: savedCode, name: savedName }, (res) => {
-      if (res && !res.error) {
-        state.myName = savedName;
-        state.myId = socket.id;
-        state.roomCode = res.code;
-        state.isHost = res.isHost;
-        state.players = res.players;
-        state.selectedBottle = res.settings.bottle;
-        state.mode = res.settings.mode;
-
-        if (res.gameStarted) {
-          state.gameStarted = true;
-          state.maxSpins = res.settings.mode;
-          showScreen('game');
-          initGame();
-        } else {
-          enterLobby();
-        }
-      } else {
-        // Clear expired details
-        sessionStorage.removeItem('spin_spill_name');
-        sessionStorage.removeItem('spin_spill_code');
-      }
-    });
-  }
-}
-
-// Process any queued candidates once remoteDescription is set
-async function processIceQueue(senderId, pc) {
-  const queue = state.iceQueues[senderId];
-  if (queue && queue.length > 0) {
-    console.log(`[WebRTC] Processing ${queue.length} queued ICE candidates for peer ${senderId}`);
-    for (const candidate of queue) {
-      try {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (err) {
-        console.warn(`[WebRTC] Failed to add queued ICE candidate for ${senderId}:`, err);
-      }
-    }
-    state.iceQueues[senderId] = [];
-  }
-}
-
-function createPeerConnection(targetId, stream) {
-  console.log(`[WebRTC → ${targetId}] Creating peer connection`);
-  const pc = new RTCPeerConnection(state.iceServers || undefined);
-  state.peerConnections[targetId] = pc;
+// ── File Selection & FileReader ──
+$('#dare-file-input')?.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  const errEl = $('#dare-upload-error');
+  const nameEl = $('#dare-file-name');
+  const btnSubmit = $('#btn-submit-photo');
   
-  // Preserve existing queued candidates that arrived before peer connection was initialized!
-  state.iceQueues[targetId] = state.iceQueues[targetId] || [];
-
-  stream.getTracks().forEach(track => {
-    console.log(`[WebRTC → ${targetId}] Adding track: ${track.kind}`);
-    pc.addTrack(track, stream);
-  });
-
-  // ── ICE candidate relay ──
-  pc.onicecandidate = (e) => {
-    if (e.candidate) {
-      socket.emit('webrtc_ice', { targetId, candidate: e.candidate });
-    } else {
-      console.log(`[WebRTC → ${targetId}] ICE gathering complete`);
-    }
-  };
-
-  // ── Connection state monitoring ──
-  pc.oniceconnectionstatechange = () => {
-    const s = pc.iceConnectionState;
-    console.log(`[WebRTC → ${targetId}] ICE state change: ${s.toUpperCase()}`);
-    if (s === 'failed' || s === 'disconnected') {
-      console.warn(`[WebRTC → ${targetId}] Connection failed or disconnected. NAT/firewall blocker possible.`);
-      showWebRTCError();
-    } else if (s === 'connected' || s === 'completed') {
-      console.log(`[WebRTC → ${targetId}] Connection fully connected/completed!`);
-    }
-  };
-
-  pc.createOffer().then(async offer => {
-    console.log(`[WebRTC → ${targetId}] Creating offer`);
-    await pc.setLocalDescription(offer);
-    socket.emit('webrtc_offer', { targetId, offer });
-  }).catch(err => {
-    console.error(`[WebRTC → ${targetId}] Offer creation failed:`, err);
-  });
-}
-
-socket.on('webrtc_offer', async ({ senderId, offer }) => {
-  console.log(`[WebRTC ← ${senderId}] Received WebRTC offer`);
-  const pc = new RTCPeerConnection(state.iceServers || undefined);
-  state.peerConnections[senderId] = pc;
+  errEl.classList.add('hidden');
   
-  // Preserve existing queued candidates that arrived before peer connection was initialized!
-  state.iceQueues[senderId] = state.iceQueues[senderId] || [];
+  if (!file) {
+    nameEl.textContent = 'No photo selected';
+    btnSubmit.classList.add('hidden');
+    return;
+  }
 
-  let trackReceived = false;
+  nameEl.textContent = file.name;
 
-  pc.ontrack = (e) => {
-    trackReceived = true;
-    const video = $('#dare-remote-video');
-    video.srcObject = e.streams[0];
+  // Strict 3MB size limit check
+  const MAX_SIZE = 3 * 1024 * 1024; // 3MB
+  if (file.size > MAX_SIZE) {
+    errEl.textContent = '⚠️ Photo must be under 3MB to submit!';
+    errEl.classList.remove('hidden');
+    btnSubmit.classList.add('hidden');
+    return;
+  }
+
+  btnSubmit.classList.remove('hidden');
+});
+
+// ── Submit Photo Click ──
+$('#btn-submit-photo')?.addEventListener('click', () => {
+  const fileInput = $('#dare-file-input');
+  const file = fileInput.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const base64Data = reader.result;
+    console.log('📸 Uploading base64 dare photo...');
+    socket.emit('submit_dare_photo', { photo: base64Data });
     
-    // Ensure remote plays unmuted for everyone else
-    video.muted = false; 
-    
-    video.classList.remove('hidden');
-    $('#dare-local-video').classList.add('hidden');
-    $('#dare-video-placeholder').classList.add('hidden');
-    console.log(`[WebRTC ← ${senderId}] Remote video and audio track attached to unmuted DOM player`);
+    // Hide upload zone once submitted
+    $('#dare-upload-zone').classList.add('hidden');
+    $('#dare-waiting-zone').classList.remove('hidden');
+    $('#dare-waiting-label').textContent = `Submitting your photo proof...`;
   };
-
-  // ── ICE candidate relay ──
-  pc.onicecandidate = (e) => {
-    if (e.candidate) {
-      socket.emit('webrtc_ice', { targetId: senderId, candidate: e.candidate });
-    } else {
-      console.log(`[WebRTC ← ${senderId}] ICE gathering complete`);
-    }
-  };
-
-  // ── Connection state monitoring ──
-  pc.oniceconnectionstatechange = () => {
-    const s = pc.iceConnectionState;
-    console.log(`[WebRTC ← ${senderId}] ICE state change: ${s.toUpperCase()}`);
-    if (s === 'failed' || s === 'disconnected') {
-      console.warn(`[WebRTC ← ${senderId}] Connection ${s}`);
-      if (!trackReceived) showWebRTCError();
-    }
-  };
-
-  try {
-    await pc.setRemoteDescription(new RTCSessionDescription(offer));
-    console.log(`[WebRTC ← ${senderId}] Set remote description (offer)`);
-    
-    // Process queued candidates now that remote description is ready
-    await processIceQueue(senderId, pc);
-
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    socket.emit('webrtc_answer', { targetId: senderId, answer });
-    console.log(`[WebRTC ← ${senderId}] Created and sent answer`);
-  } catch (err) {
-    console.error(`[WebRTC ← ${senderId}] Error processing offer/answer:`, err);
-    showWebRTCError();
-  }
-
-  // ── Timeout fallback — if no track arrives, show error ──
-  setTimeout(() => {
-    if (!trackReceived && pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed') {
-      console.warn(`[WebRTC ← ${senderId}] Timed out after ${WEBRTC_TIMEOUT_MS / 1000}s — no video received`);
-      showWebRTCError();
-    }
-  }, WEBRTC_TIMEOUT_MS);
+  reader.readAsDataURL(file);
 });
 
-socket.on('webrtc_answer', async ({ senderId, answer }) => {
-  console.log(`[WebRTC ← ${senderId}] Received WebRTC answer`);
-  const pc = state.peerConnections[senderId];
-  if (pc) {
-    try {
-      await pc.setRemoteDescription(new RTCSessionDescription(answer));
-      console.log(`[WebRTC ← ${senderId}] Set remote description (answer)`);
-      
-      // Process queued candidates now that remote description is ready
-      await processIceQueue(senderId, pc);
-    } catch (err) {
-      console.error(`[WebRTC ← ${senderId}] Failed to set remote description:`, err);
-    }
+// ── Host Approval Click Handlers ──
+$('#btn-dare-approve')?.addEventListener('click', () => {
+  if (state.isHost) {
+    socket.emit('approve_dare');
   }
 });
 
-socket.on('webrtc_ice', async ({ senderId, candidate }) => {
-  // Always initialize candidate queue for the peer to prevent dropped packets
-  if (!state.iceQueues[senderId]) {
-    state.iceQueues[senderId] = [];
-  }
-
-  const pc = state.peerConnections[senderId];
-  if (pc && pc.remoteDescription && pc.remoteDescription.type) {
-    try {
-      await pc.addIceCandidate(new RTCIceCandidate(candidate));
-      console.log(`[WebRTC ← ${senderId}] Added ICE candidate immediately`);
-    } catch (err) {
-      console.warn(`[WebRTC ← ${senderId}] Failed to add ICE candidate immediately:`, err);
-    }
-  } else {
-    console.log(`[WebRTC ← ${senderId}] Queueing ICE candidate (remoteDescription not set or connection uninitialized)`);
-    state.iceQueues[senderId].push(candidate);
+$('#btn-dare-reject')?.addEventListener('click', () => {
+  if (state.isHost) {
+    socket.emit('reject_dare');
   }
 });
 
-// ── WebRTC Fallback Error UI ──
-function showWebRTCError() {
-  const placeholder = $('#dare-video-placeholder');
-  if (!placeholder) return;
-  // Only show if remote video isn't already playing
-  const remoteVid = $('#dare-remote-video');
-  if (remoteVid && remoteVid.srcObject && !remoteVid.paused) return;
+// ── Dare Photo Socket Listeners ──
+socket.on('dare_photo_received', ({ photo, playerName }) => {
+  console.log(`📸 Displaying dare photo for ${playerName}`);
+  
+  // Hide loading/waiting spinners
+  $('#dare-waiting-zone').classList.add('hidden');
+  $('#dare-upload-zone').classList.add('hidden');
 
-  placeholder.classList.remove('hidden');
-  placeholder.innerHTML = `
-    <div class="text-center" style="padding:1rem">
-      <div style="font-size:2.5rem;margin-bottom:0.5rem">📡</div>
-      <p style="color:#c84a4a;font-size:0.95rem;font-weight:700;margin-bottom:0.3rem">
-        Video connection failed
-      </p>
-      <p style="color:#888;font-size:0.8rem;line-height:1.4">
-        Could not establish a peer-to-peer link.<br>
-        This usually means a strict firewall or NAT is blocking the connection.<br>
-        Try switching to mobile data or a different Wi-Fi network.
-      </p>
-      <p style="color:#aaa;font-size:0.7rem;margin-top:0.5rem;font-style:italic">
-        The dare is still active — the player's camera is on locally.
-      </p>
-    </div>`;
-}
+  // Display photo inside polaroid frame
+  const polaroid = $('#dare-polaroid');
+  const preview = $('#dare-image-preview');
+  const caption = $('#dare-image-caption');
+  
+  if (preview && polaroid && caption) {
+    preview.src = photo;
+    caption.textContent = `${playerName}'s Dare!`;
+    polaroid.classList.remove('hidden');
+  }
 
-$('#btn-dare-complete').addEventListener('click', () => {
-  socket.emit('dare_completed');
+  // If we are host, show approval buttons!
+  if (state.isHost) {
+    $('#dare-host-controls').classList.remove('hidden');
+  }
 });
 
-socket.on('dare_done', ({ playerName }) => {
+socket.on('dare_photo_approved', ({ playerName }) => {
   hideAllOverlays();
-  stopAllMedia();
-  addSystemMessage(`✅ ${playerName} completed the dare! (+3pts)`);
+  addSystemMessage(`✅ Host approved ${playerName}'s dare! (+3pts)`);
+});
+
+socket.on('dare_photo_rejected', ({ playerName }) => {
+  hideAllOverlays();
+  addSystemMessage(`❌ Host rejected ${playerName}'s dare!`);
+});
+
+// ── Turn Skipped due to Disconnect ──
+socket.on('turn_skipped_disconnect', ({ playerName }) => {
+  hideAllOverlays();
+  addSystemMessage(`⚠️ Turn skipped: ${playerName} disconnected during their turn!`);
 });
 
 function stopAllMedia() {
-  if (state.localStream) {
-    state.localStream.getTracks().forEach(t => t.stop());
-    state.localStream = null;
-  }
-  Object.values(state.peerConnections).forEach(pc => pc.close());
-  state.peerConnections = {};
-  $('#dare-local-video').srcObject = null;
-  $('#dare-remote-video').srcObject = null;
+  // WebRTC removed
 }
 
 // ── Next Turn ──
@@ -824,7 +658,6 @@ function escHtml(str) {
 
 // ── Init ──
 checkJoinUrl();
-fetchIceConfig();
 checkRejoin();
 
 // ══════════════════════════════════════════════════════════════
