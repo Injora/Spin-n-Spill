@@ -4,6 +4,24 @@
 
 const socket = io();
 
+// ── Handle Connection Disconnect & Reset Photo UI if frozen ──
+socket.on('disconnect', (reason) => {
+  console.warn('⚠️ Disconnected from server:', reason);
+  addSystemMessage('⚠️ Disconnected from server. Reconnecting...');
+  
+  // If the upload was currently loading/submitting, reset UI so it doesn't freeze
+  const waitingLabel = $('#dare-waiting-label');
+  if (waitingLabel && waitingLabel.textContent.includes('Submitting')) {
+    $('#dare-waiting-zone').classList.add('hidden');
+    $('#dare-upload-zone').classList.remove('hidden');
+    const errEl = $('#dare-upload-error');
+    if (errEl) {
+      errEl.textContent = '❌ Upload failed due to disconnection! Please try again.';
+      errEl.classList.remove('hidden');
+    }
+  }
+});
+
 
 
 // ── State ──
@@ -475,15 +493,44 @@ $('#btn-submit-photo')?.addEventListener('click', () => {
   if (!file) return;
 
   const reader = new FileReader();
-  reader.onload = () => {
-    const base64Data = reader.result;
-    console.log('📸 Uploading base64 dare photo...');
-    socket.emit('submit_dare_photo', { photo: base64Data });
-    
-    // Hide upload zone once submitted
-    $('#dare-upload-zone').classList.add('hidden');
-    $('#dare-waiting-zone').classList.remove('hidden');
-    $('#dare-waiting-label').textContent = `Submitting your photo proof...`;
+  reader.onload = (event) => {
+    const img = new Image();
+    img.onload = () => {
+      // Create canvas for compression and resizing
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+      
+      // Limit dimensions to 800px while keeping aspect ratio
+      const MAX_DIM = 800;
+      if (width > MAX_DIM || height > MAX_DIM) {
+        if (width > height) {
+          height = Math.round((height * MAX_DIM) / width);
+          width = MAX_DIM;
+        } else {
+          width = Math.round((width * MAX_DIM) / height);
+          height = MAX_DIM;
+        }
+      }
+      
+      canvas.width = width;
+      canvas.height = height;
+      
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      // Compress to 60% quality JPEG Base64
+      const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
+      
+      console.log('📸 Uploading compressed base64 dare photo...');
+      socket.emit('submit_dare_photo', { photo: compressedDataUrl });
+      
+      // Hide upload zone once submitted
+      $('#dare-upload-zone').classList.add('hidden');
+      $('#dare-waiting-zone').classList.remove('hidden');
+      $('#dare-waiting-label').textContent = `Submitting your photo proof...`;
+    };
+    img.src = event.target.result;
   };
   reader.readAsDataURL(file);
 });
