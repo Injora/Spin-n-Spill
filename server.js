@@ -52,7 +52,8 @@ function createRoom(hostId, hostName) {
       score: 0,
       isHost: true,
       truthCount: 0,
-      dareCount: 0
+      dareCount: 0,
+      connected: true
     }],
     settings: {
       bottle: 0,
@@ -61,7 +62,7 @@ function createRoom(hostId, hostName) {
     state: {
       started: false,
       currentSpin: 0,
-      phase: 'idle',        // idle | spinning | choosing | truth | dare
+      phase: 'idle',
       selectedPlayer: null,
       spinnerIndex: 0,
       currentDare: null,
@@ -81,7 +82,8 @@ function getPublicPlayers(room) {
     score: p.score,
     isHost: p.isHost,
     truthCount: p.truthCount,
-    dareCount: p.dareCount
+    dareCount: p.dareCount,
+    connected: p.connected
   }));
 }
 
@@ -140,7 +142,8 @@ io.on('connection', (socket) => {
       code: room.code,
       players: getPublicPlayers(room),
       settings: room.settings,
-      isHost: true
+      isHost: true,
+      gameStarted: false
     });
   });
 
@@ -150,9 +153,37 @@ io.on('connection', (socket) => {
     code = (code || '').toUpperCase().trim();
     const room = rooms.get(code);
     if (!room) return cb({ error: 'Room not found' });
+
+    // Try to find if player is rejoining after a refresh
+    const existingPlayer = room.players.find(p => p.name.toLowerCase() === name.trim().toLowerCase());
+    if (existingPlayer) {
+      if (existingPlayer.connected) {
+        return cb({ error: 'Name already taken' });
+      } else {
+        // Reconnect player
+        existingPlayer.id = socket.id;
+        existingPlayer.connected = true;
+        
+        // If the player was the host, restore hostId
+        if (existingPlayer.isHost) {
+          room.hostId = socket.id;
+        }
+
+        socket.join(code);
+        console.log(`⚡ ${name} reconnected to room ${code}`);
+        io.to(code).emit('update_players', getPublicPlayers(room));
+        return cb({
+          code: room.code,
+          players: getPublicPlayers(room),
+          settings: room.settings,
+          isHost: existingPlayer.isHost,
+          gameStarted: room.state.started
+        });
+      }
+    }
+
     if (room.state.started) return cb({ error: 'Game already in progress' });
     if (room.players.length >= 20) return cb({ error: 'Room is full' });
-    if (room.players.find(p => p.name === name.trim())) return cb({ error: 'Name already taken' });
 
     const player = {
       id: socket.id,
@@ -161,7 +192,8 @@ io.on('connection', (socket) => {
       score: 0,
       isHost: false,
       truthCount: 0,
-      dareCount: 0
+      dareCount: 0,
+      connected: true
     };
     room.players.push(player);
     socket.join(code);
@@ -172,7 +204,8 @@ io.on('connection', (socket) => {
       code: room.code,
       players: getPublicPlayers(room),
       settings: room.settings,
-      isHost: false
+      isHost: false,
+      gameStarted: room.state.started
     });
   });
 
@@ -416,36 +449,19 @@ io.on('connection', (socket) => {
     const room = getRoomForSocket(socket.id);
     if (!room) return;
 
-    const playerIndex = room.players.findIndex(p => p.id === socket.id);
-    const wasHost = room.hostId === socket.id;
-    room.players.splice(playerIndex, 1);
-
-    console.log(`💨 ${socket.id} disconnected from room ${room.code}`);
-
-    if (room.players.length === 0) {
-      rooms.delete(room.code);
-      console.log(`🗑️  Room ${room.code} deleted (empty)`);
-      return;
+    const player = room.players.find(p => p.id === socket.id);
+    if (player) {
+      player.connected = false;
+      console.log(`💨 ${player.name} disconnected from room ${room.code} (persistence active)`);
     }
 
-    // Host migration
-    if (wasHost) {
-      room.hostId = room.players[0].id;
-      room.players[0].isHost = true;
-      io.to(room.code).emit('host_changed', {
-        newHostId: room.players[0].id,
-        newHostName: room.players[0].name
-      });
-    }
+    // Keep room active even if empty; only delete if it remains empty for 5 minutes (garbage collection),
+    // or when the host explicitly calls terminate_room.
+    // For now, as explicitly requested, the room is ONLY destroyed on terminate_room.
 
-    // Fix spinner index if needed
-    if (room.state.spinnerIndex >= room.players.length) {
-      room.state.spinnerIndex = 0;
-    }
-
-    // If the selected player left during their turn, advance
+    // If the selected player disconnected during their turn, reset phase to idle
     if (room.state.selectedPlayer === socket.id &&
-        ['choosing', 'truth', 'dare'].includes(room.state.phase)) {
+      ['choosing', 'truth', 'dare'].includes(room.state.phase)) {
       room.state.phase = 'idle';
       io.to(room.code).emit('phase_change', { phase: 'idle' });
     }

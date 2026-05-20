@@ -67,6 +67,11 @@ $('#btn-create').addEventListener('click', () => {
     state.players = res.players;
     state.selectedBottle = res.settings.bottle;
     state.mode = res.settings.mode;
+
+    // Save to sessionStorage for refresh persistence
+    sessionStorage.setItem('spin_spill_name', state.myName);
+    sessionStorage.setItem('spin_spill_code', state.roomCode);
+
     enterLobby();
   });
 });
@@ -85,7 +90,19 @@ $('#btn-join').addEventListener('click', () => {
     state.players = res.players;
     state.selectedBottle = res.settings.bottle;
     state.mode = res.settings.mode;
-    enterLobby();
+
+    // Save to sessionStorage for refresh persistence
+    sessionStorage.setItem('spin_spill_name', state.myName);
+    sessionStorage.setItem('spin_spill_code', state.roomCode);
+
+    if (res.gameStarted) {
+      state.gameStarted = true;
+      state.maxSpins = res.settings.mode;
+      showScreen('game');
+      initGame();
+    } else {
+      enterLobby();
+    }
   });
 });
 
@@ -439,6 +456,9 @@ async function startLocalCamera() {
 // Connection timeout — if no track arrives within this window, show fallback
 const WEBRTC_TIMEOUT_MS = 15000;
 
+// Queue to hold ICE candidates if remote description is not yet set
+state.iceQueues = {};
+
 // Fetch ICE Servers configuration from server on start
 function fetchIceConfig() {
   socket.emit('get_ice_config', (res) => {
@@ -449,11 +469,65 @@ function fetchIceConfig() {
   });
 }
 
+// Reconnect/rejoin helper for page refresh
+function checkRejoin() {
+  const savedName = sessionStorage.getItem('spin_spill_name');
+  const savedCode = sessionStorage.getItem('spin_spill_code');
+  if (savedName && savedCode) {
+    console.log(`🔄 Attempting auto-rejoin to room ${savedCode} as ${savedName}`);
+    socket.emit('join_room', { code: savedCode, name: savedName }, (res) => {
+      if (res && !res.error) {
+        state.myName = savedName;
+        state.myId = socket.id;
+        state.roomCode = res.code;
+        state.isHost = res.isHost;
+        state.players = res.players;
+        state.selectedBottle = res.settings.bottle;
+        state.mode = res.settings.mode;
+
+        if (res.gameStarted) {
+          state.gameStarted = true;
+          state.maxSpins = res.settings.mode;
+          showScreen('game');
+          initGame();
+        } else {
+          enterLobby();
+        }
+      } else {
+        // Clear expired details
+        sessionStorage.removeItem('spin_spill_name');
+        sessionStorage.removeItem('spin_spill_code');
+      }
+    });
+  }
+}
+
+// Process any queued candidates once remoteDescription is set
+async function processIceQueue(senderId, pc) {
+  const queue = state.iceQueues[senderId];
+  if (queue && queue.length > 0) {
+    console.log(`[WebRTC] Processing ${queue.length} queued ICE candidates for peer ${senderId}`);
+    for (const candidate of queue) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.warn(`[WebRTC] Failed to add queued ICE candidate for ${senderId}:`, err);
+      }
+    }
+    state.iceQueues[senderId] = [];
+  }
+}
+
 function createPeerConnection(targetId, stream) {
+  console.log(`[WebRTC → ${targetId}] Creating peer connection`);
   const pc = new RTCPeerConnection(state.iceServers || undefined);
   state.peerConnections[targetId] = pc;
+  state.iceQueues[targetId] = [];
 
-  stream.getTracks().forEach(track => pc.addTrack(track, stream));
+  stream.getTracks().forEach(track => {
+    console.log(`[WebRTC → ${targetId}] Adding track: ${track.kind}`);
+    pc.addTrack(track, stream);
+  });
 
   // ── ICE candidate relay ──
   pc.onicecandidate = (e) => {
@@ -467,17 +541,18 @@ function createPeerConnection(targetId, stream) {
   // ── Connection state monitoring ──
   pc.oniceconnectionstatechange = () => {
     const s = pc.iceConnectionState;
-    console.log(`[WebRTC → ${targetId}] ICE state: ${s}`);
+    console.log(`[WebRTC → ${targetId}] ICE state change: ${s.toUpperCase()}`);
     if (s === 'failed' || s === 'disconnected') {
-      console.warn(`[WebRTC → ${targetId}] Connection ${s} — peer may be behind strict NAT`);
+      console.warn(`[WebRTC → ${targetId}] Connection failed or disconnected. NAT/firewall blocker possible.`);
       showWebRTCError();
     } else if (s === 'connected' || s === 'completed') {
-      console.log(`[WebRTC → ${targetId}] Connected successfully`);
+      console.log(`[WebRTC → ${targetId}] Connection fully connected/completed!`);
     }
   };
 
-  pc.createOffer().then(offer => {
-    pc.setLocalDescription(offer);
+  pc.createOffer().then(async offer => {
+    console.log(`[WebRTC → ${targetId}] Creating offer`);
+    await pc.setLocalDescription(offer);
     socket.emit('webrtc_offer', { targetId, offer });
   }).catch(err => {
     console.error(`[WebRTC → ${targetId}] Offer creation failed:`, err);
@@ -485,8 +560,10 @@ function createPeerConnection(targetId, stream) {
 }
 
 socket.on('webrtc_offer', async ({ senderId, offer }) => {
+  console.log(`[WebRTC ← ${senderId}] Received WebRTC offer`);
   const pc = new RTCPeerConnection(state.iceServers || undefined);
   state.peerConnections[senderId] = pc;
+  state.iceQueues[senderId] = [];
 
   let trackReceived = false;
 
@@ -494,10 +571,14 @@ socket.on('webrtc_offer', async ({ senderId, offer }) => {
     trackReceived = true;
     const video = $('#dare-remote-video');
     video.srcObject = e.streams[0];
+    
+    // Ensure remote plays unmuted for everyone else
+    video.muted = false; 
+    
     video.classList.remove('hidden');
     $('#dare-local-video').classList.add('hidden');
     $('#dare-video-placeholder').classList.add('hidden');
-    console.log(`[WebRTC ← ${senderId}] Remote track received`);
+    console.log(`[WebRTC ← ${senderId}] Remote video and audio track attached to unmuted DOM player`);
   };
 
   // ── ICE candidate relay ──
@@ -512,7 +593,7 @@ socket.on('webrtc_offer', async ({ senderId, offer }) => {
   // ── Connection state monitoring ──
   pc.oniceconnectionstatechange = () => {
     const s = pc.iceConnectionState;
-    console.log(`[WebRTC ← ${senderId}] ICE state: ${s}`);
+    console.log(`[WebRTC ← ${senderId}] ICE state change: ${s.toUpperCase()}`);
     if (s === 'failed' || s === 'disconnected') {
       console.warn(`[WebRTC ← ${senderId}] Connection ${s}`);
       if (!trackReceived) showWebRTCError();
@@ -521,11 +602,17 @@ socket.on('webrtc_offer', async ({ senderId, offer }) => {
 
   try {
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    console.log(`[WebRTC ← ${senderId}] Set remote description (offer)`);
+    
+    // Process queued candidates now that remote description is ready
+    await processIceQueue(senderId, pc);
+
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     socket.emit('webrtc_answer', { targetId: senderId, answer });
+    console.log(`[WebRTC ← ${senderId}] Created and sent answer`);
   } catch (err) {
-    console.error(`[WebRTC ← ${senderId}] Answer failed:`, err);
+    console.error(`[WebRTC ← ${senderId}] Error processing offer/answer:`, err);
     showWebRTCError();
   }
 
@@ -539,10 +626,15 @@ socket.on('webrtc_offer', async ({ senderId, offer }) => {
 });
 
 socket.on('webrtc_answer', async ({ senderId, answer }) => {
+  console.log(`[WebRTC ← ${senderId}] Received WebRTC answer`);
   const pc = state.peerConnections[senderId];
   if (pc) {
     try {
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      console.log(`[WebRTC ← ${senderId}] Set remote description (answer)`);
+      
+      // Process queued candidates now that remote description is ready
+      await processIceQueue(senderId, pc);
     } catch (err) {
       console.error(`[WebRTC ← ${senderId}] Failed to set remote description:`, err);
     }
@@ -552,10 +644,17 @@ socket.on('webrtc_answer', async ({ senderId, answer }) => {
 socket.on('webrtc_ice', async ({ senderId, candidate }) => {
   const pc = state.peerConnections[senderId];
   if (pc) {
-    try {
-      await pc.addIceCandidate(new RTCIceCandidate(candidate));
-    } catch (err) {
-      console.warn(`[WebRTC ← ${senderId}] Failed to add ICE candidate:`, err);
+    if (pc.remoteDescription && pc.remoteDescription.type) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        console.log(`[WebRTC ← ${senderId}] Added ICE candidate immediately`);
+      } catch (err) {
+        console.warn(`[WebRTC ← ${senderId}] Failed to add ICE candidate:`, err);
+      }
+    } else {
+      console.log(`[WebRTC ← ${senderId}] Queueing ICE candidate (remoteDescription not set)`);
+      if (!state.iceQueues[senderId]) state.iceQueues[senderId] = [];
+      state.iceQueues[senderId].push(candidate);
     }
   }
 });
@@ -720,6 +819,7 @@ function escHtml(str) {
 // ── Init ──
 checkJoinUrl();
 fetchIceConfig();
+checkRejoin();
 
 // ══════════════════════════════════════════════════════════════
 //  PRIVACY & ANTI-SCREENSHOT
@@ -743,6 +843,9 @@ window.addEventListener('focus', () => {
   privacyOverlay?.classList.remove('active');
 });
 
+// TEMPORARY DEV MODE: Blockers commented out for easier DevTools inspection.
+// Remember to uncomment this entire section for strict production anti-cheat security!
+/*
 // Intercept screenshot keys
 document.addEventListener('keydown', (e) => {
   // PrintScreen
@@ -771,6 +874,7 @@ document.addEventListener('keyup', (e) => {
     e.preventDefault();
   }
 });
+*/
 
 // ══════════════════════════════════════════════════════════════
 //  CLOSE ROOM / ROOM TERMINATION
@@ -784,6 +888,10 @@ $('#btn-close-room')?.addEventListener('click', () => {
 });
 
 socket.on('room_closed', () => {
+  // Clear persistent session details
+  sessionStorage.removeItem('spin_spill_name');
+  sessionStorage.removeItem('spin_spill_code');
+  
   // Stop all camera/WebRTC
   stopAllMedia();
   // Reset state
