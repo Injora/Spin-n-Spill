@@ -51,9 +51,7 @@ function checkJoinUrl() {
     window.history.replaceState({}, '', '/');
   }
 }
-// ══════════════════════════════════════════════════════════════
-//  HOME SCREEN
-// ══════════════════════════════════════════════════════════════
+
 $('#btn-create').addEventListener('click', () => {
   const name = $('#input-name').value.trim();
   if (!name) return showError('home', 'Please enter your name');
@@ -66,7 +64,6 @@ $('#btn-create').addEventListener('click', () => {
     state.players = res.players;
     state.selectedBottle = res.settings.bottle;
     state.mode = res.settings.mode;
-    // Save to sessionStorage for refresh persistence
     sessionStorage.setItem('spin_spill_name', state.myName);
     sessionStorage.setItem('spin_spill_code', state.roomCode);
     enterLobby();
@@ -86,7 +83,6 @@ $('#btn-join').addEventListener('click', () => {
     state.players = res.players;
     state.selectedBottle = res.settings.bottle;
     state.mode = res.settings.mode;
-    // Save to sessionStorage for refresh persistence
     sessionStorage.setItem('spin_spill_name', state.myName);
     sessionStorage.setItem('spin_spill_code', state.roomCode);
     if (res.gameStarted) {
@@ -116,9 +112,7 @@ function showError(screen, msg) {
   el.classList.remove('hidden');
   setTimeout(() => el.classList.add('hidden'), 4000);
 }
-// ══════════════════════════════════════════════════════════════
-//  LOBBY
-// ══════════════════════════════════════════════════════════════
+
 function enterLobby() {
   showScreen('lobby');
   $('#lobby-code').textContent = state.roomCode;
@@ -166,7 +160,6 @@ $('#btn-start').addEventListener('click', () => {
     if (res?.error) showError('lobby', res.error);
   });
 });
-// ── Lobby Socket Events ──
 socket.on('update_players', (players) => {
   state.players = players;
   if (!state.gameStarted) renderLobbyPlayers();
@@ -184,9 +177,6 @@ socket.on('host_changed', ({ newHostId, newHostName }) => {
   state.isHost = (newHostId === socket.id);
   addSystemMessage(`${newHostName} is now the host`);
 });
-// ══════════════════════════════════════════════════════════════
-//  GAME
-// ══════════════════════════════════════════════════════════════
 socket.on('game_started', ({ settings, players, spinnerIndex }) => {
   state.gameStarted = true;
   state.players = players;
@@ -196,7 +186,6 @@ socket.on('game_started', ({ settings, players, spinnerIndex }) => {
   state.currentSpin = 0;
   state.spinnerIndex = spinnerIndex;
   state.phase = 'idle';
-  // Clear game chat messages for the new game!
   const gameChat = $('#chat-messages');
   if (gameChat) gameChat.innerHTML = '';
   showScreen('game');
@@ -211,12 +200,10 @@ function initGame() {
   updateSpinButton();
   updateTurnIndicator();
   addSystemMessage('Game started! Let the spills begin!');
-  // Show Close Room button for host only
   const closeBtn = $('#btn-close-room');
   if (closeBtn) closeBtn.classList.toggle('hidden', !state.isHost);
 }
 function updateBottleSVG() {
-  // Sketchy hand-drawn cola bottle
   $('#spinning-bottle').innerHTML = `
     <svg viewBox="0 0 60 160" class="w-full h-full">
       <!-- Cap -->
@@ -235,7 +222,6 @@ function updateBottleSVG() {
 }
 function renderPlayerCircle() {
   const circle = $('#player-circle');
-  // Remove old nodes
   circle.querySelectorAll('.player-node').forEach(n => n.remove());
   const N = state.players.length;
   const containerSize = circle.offsetWidth || 400;
@@ -270,7 +256,7 @@ function updateTurnIndicator() {
     $('#turn-name').textContent = spinner.id === socket.id ? 'Your Turn!' : spinner.name;
   }
 }
-// ── Spin ──
+
 $('#btn-spin').addEventListener('click', () => {
   if (state.phase !== 'idle') return;
   socket.emit('spin_bottle');
@@ -281,20 +267,17 @@ socket.on('bottle_result', ({ selectedPlayerId, selectedPlayerName, targetAngle,
   state.selectedPlayerId = selectedPlayerId;
   $('#spin-current').textContent = spinNumber;
   $('#btn-spin').classList.add('hidden');
-  // Animate bottle
   const bottle = $('#spinning-bottle');
   bottle.style.transform = 'rotate(0deg)';
   bottle.classList.remove('bottle-spinning');
-  void bottle.offsetWidth; // force reflow
+  void bottle.offsetWidth; 
   bottle.classList.add('bottle-spinning');
   bottle.style.transform = `rotate(${targetAngle}deg)`;
-  // Highlight selected player after spin
   setTimeout(() => {
     renderPlayerCircle();
     addSystemMessage(`Bottle landed on ${selectedPlayerName}!`);
   }, 4000);
 });
-// ── Phase Changes ──
 socket.on('phase_change', ({ phase, selectedPlayerId, selectedPlayerName }) => {
   state.phase = phase;
   state.selectedPlayerId = selectedPlayerId || state.selectedPlayerId;
@@ -343,7 +326,6 @@ $('#btn-dare').addEventListener('click', () => {
   socket.emit('choose_truth_or_dare', { choice: 'dare' });
   hideAllOverlays();
 });
-// ── Truth ──
 function showTruthOverlay(isMe, playerName) {
   const overlay = $('#truth-overlay');
   overlay.classList.remove('hidden');
@@ -377,16 +359,13 @@ socket.on('truth_submitted', ({ playerName }) => {
   hideAllOverlays();
   addSystemMessage(`${playerName} spilled the truth! 💬`);
 });
-// ── Dare + Photo Upload ──
 function showDareOverlay(isMe, playerName) {
   const overlay = $('#dare-overlay');
   overlay.classList.remove('hidden');
-  // Hide Polaroid display and Host controls initially
   $('#dare-polaroid').classList.add('hidden');
   $('#dare-host-controls').classList.add('hidden');
   $('#dare-image-preview').src = '';
   $('#dare-image-caption').textContent = '';
-  // Reset file upload inputs
   $('#dare-file-input').value = '';
   $('#dare-file-name').textContent = 'No photo selected';
   $('#btn-submit-photo').classList.add('hidden');
@@ -403,7 +382,6 @@ function showDareOverlay(isMe, playerName) {
   }
   addSystemMessage(`🔥 ${playerName} chose DARE! Photo upload is pending...`);
 }
-// ── File Selection & FileReader ──
 $('#dare-file-input')?.addEventListener('change', (e) => {
   const file = e.target.files[0];
   const errEl = $('#dare-upload-error');
@@ -416,8 +394,7 @@ $('#dare-file-input')?.addEventListener('change', (e) => {
     return;
   }
   nameEl.textContent = file.name;
-  // Strict 3MB size limit check
-  const MAX_SIZE = 3 * 1024 * 1024; // 3MB
+  const MAX_SIZE = 3 * 1024 * 1024;
   if (file.size > MAX_SIZE) {
     errEl.textContent = '⚠️ Photo must be under 3MB to submit!';
     errEl.classList.remove('hidden');
@@ -426,7 +403,6 @@ $('#dare-file-input')?.addEventListener('change', (e) => {
   }
   btnSubmit.classList.remove('hidden');
 });
-// ── Submit Photo Click ──
 $('#btn-submit-photo')?.addEventListener('click', () => {
   const fileInput = $('#dare-file-input');
   const file = fileInput.files[0];
@@ -435,11 +411,9 @@ $('#btn-submit-photo')?.addEventListener('click', () => {
   reader.onload = (event) => {
     const img = new Image();
     img.onload = () => {
-      // Create canvas for compression and resizing
       const canvas = document.createElement('canvas');
       let width = img.width;
       let height = img.height;
-      // Limit dimensions to 800px while keeping aspect ratio
       const MAX_DIM = 800;
       if (width > MAX_DIM || height > MAX_DIM) {
         if (width > height) {
@@ -454,11 +428,9 @@ $('#btn-submit-photo')?.addEventListener('click', () => {
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, width, height);
-      // Compress to 60% quality JPEG Base64
       const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
       console.log('📸 Uploading compressed base64 dare photo...');
       socket.emit('submit_dare_photo', { photo: compressedDataUrl });
-      // Hide upload zone once submitted
       $('#dare-upload-zone').classList.add('hidden');
       $('#dare-waiting-zone').classList.remove('hidden');
       $('#dare-waiting-label').textContent = `Submitting your photo proof...`;
@@ -467,7 +439,6 @@ $('#btn-submit-photo')?.addEventListener('click', () => {
   };
   reader.readAsDataURL(file);
 });
-// ── Host Approval Click Handlers ──
 $('#btn-dare-approve')?.addEventListener('click', () => {
   if (state.isHost) {
     socket.emit('approve_dare');
@@ -478,13 +449,10 @@ $('#btn-dare-reject')?.addEventListener('click', () => {
     socket.emit('reject_dare');
   }
 });
-// ── Dare Photo Socket Listeners ──
 socket.on('dare_photo_received', ({ photo, playerName }) => {
   console.log(`📸 Displaying dare photo for ${playerName}`);
-  // Hide loading/waiting spinners
   $('#dare-waiting-zone').classList.add('hidden');
   $('#dare-upload-zone').classList.add('hidden');
-  // Display photo inside polaroid frame
   const polaroid = $('#dare-polaroid');
   const preview = $('#dare-image-preview');
   const caption = $('#dare-image-caption');
@@ -493,7 +461,6 @@ socket.on('dare_photo_received', ({ photo, playerName }) => {
     caption.textContent = `${playerName}'s Dare!`;
     polaroid.classList.remove('hidden');
   }
-  // If we are host, show approval buttons!
   if (state.isHost) {
     $('#dare-host-controls').classList.remove('hidden');
   }
@@ -506,15 +473,12 @@ socket.on('dare_photo_rejected', ({ playerName }) => {
   hideAllOverlays();
   addSystemMessage(`❌ Host rejected ${playerName}'s dare!`);
 });
-// ── Turn Skipped due to Disconnect ──
 socket.on('turn_skipped_disconnect', ({ playerName }) => {
   hideAllOverlays();
   addSystemMessage(`⚠️ Turn skipped: ${playerName} disconnected during their turn!`);
 });
 function stopAllMedia() {
-  // WebRTC removed
 }
-// ── Next Turn ──
 socket.on('next_turn', ({ spinnerIndex, spinnerId, spinnerName, spinNumber, maxSpins }) => {
   state.spinnerIndex = spinnerIndex;
   state.phase = 'idle';
@@ -527,7 +491,7 @@ socket.on('next_turn', ({ spinnerIndex, spinnerId, spinnerName, spinNumber, maxS
   renderPlayerCircle();
   addSystemMessage(`${spinnerName}'s turn to spin!`);
 });
-// ── Game Over ──
+
 socket.on('game_over', ({ leaderboard }) => {
   state.gameStarted = false;
   stopAllMedia();
@@ -551,9 +515,6 @@ function renderLeaderboard(lb) {
 $('#btn-play-again').addEventListener('click', () => {
   window.location.reload();
 });
-// ══════════════════════════════════════════════════════════════
-//  CHAT
-// ══════════════════════════════════════════════════════════════
 $('#btn-send-chat').addEventListener('click', sendChat);
 $('#chat-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') sendChat();
@@ -593,7 +554,6 @@ function appendChatMessage(msg) {
 function addSystemMessage(text) {
   appendChatMessage({ type: 'system', text });
 }
-// ── Lobby Chat Handlers ──
 $('#btn-lobby-send')?.addEventListener('click', sendLobbyChat);
 $('#lobby-chat-input')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') sendLobbyChat();
@@ -606,25 +566,21 @@ function sendLobbyChat() {
   socket.emit('send_chat_message', { text });
   input.value = '';
 }
-// ── Chat Toggle (mobile) ──
 $('#btn-toggle-chat')?.addEventListener('click', () => {
   const panel = $('#chat-panel');
   panel.classList.toggle('chat-collapsed');
   const body = $('#chat-body');
   body.style.display = panel.classList.contains('chat-collapsed') ? 'none' : 'flex';
 });
-// ── Player Left ──
 socket.on('player_left', ({ playerId }) => {
   const player = state.players.find(p => p.id === playerId);
   if (player) addSystemMessage(`${player.name} left the room`);
 });
-// ── Utility ──
 function escHtml(str) {
   const d = document.createElement('div');
   d.textContent = str;
   return d.innerHTML;
 }
-// ── Rejoin Handler ──
 function checkRejoin() {
   const name = sessionStorage.getItem('spin_spill_name');
   const code = sessionStorage.getItem('spin_spill_code');
@@ -660,14 +616,9 @@ function checkRejoin() {
     });
   }
 }
-// ── Init ──
 checkJoinUrl();
 checkRejoin();
-// ══════════════════════════════════════════════════════════════
-//  PRIVACY & ANTI-SCREENSHOT
-// ══════════════════════════════════════════════════════════════
 const privacyOverlay = $('#privacy-overlay');
-// Visibility change — hide game when tab/window is not focused
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     privacyOverlay?.classList.add('active');
@@ -681,24 +632,18 @@ window.addEventListener('blur', () => {
 window.addEventListener('focus', () => {
   privacyOverlay?.classList.remove('active');
 });
-// TEMPORARY DEV MODE: Blockers commented out for easier DevTools inspection.
-// Remember to uncomment this entire section for strict production anti-cheat security!
 /*
-// Intercept screenshot keys
 document.addEventListener('keydown', (e) => {
-  // PrintScreen
   if (e.key === 'PrintScreen') {
     e.preventDefault();
     privacyOverlay?.classList.add('active');
     setTimeout(() => privacyOverlay?.classList.remove('active'), 1500);
     return;
   }
-  // Ctrl+P (print)
   if (e.ctrlKey && e.key === 'p') {
     e.preventDefault();
     return;
   }
-  // macOS: Cmd+Shift+3 or Cmd+Shift+4 (screenshot)
   if (e.metaKey && e.shiftKey && (e.key === '3' || e.key === '4' || e.key === '5')) {
     e.preventDefault();
     privacyOverlay?.classList.add('active');
@@ -712,9 +657,6 @@ document.addEventListener('keyup', (e) => {
   }
 });
 */
-// ══════════════════════════════════════════════════════════════
-//  CLOSE ROOM / ROOM TERMINATION
-// ══════════════════════════════════════════════════════════════
 $('#btn-close-room')?.addEventListener('click', () => {
   if (!state.isHost) return;
   if (confirm('Close this room? All session data will be permanently wiped.')) {
