@@ -121,6 +121,12 @@ $('#btn-join').addEventListener('click', () => {
     } else {
       enterLobby();
     }
+
+    if (res.messages) {
+      res.messages.forEach(msg => {
+        appendChatMessage(msg);
+      });
+    }
   });
 });
 
@@ -149,6 +155,9 @@ function enterLobby() {
   $('#lobby-link').textContent = link;
   $('#lobby-link').onclick = () => { navigator.clipboard.writeText(link); $('#lobby-link').textContent = 'Copied!'; setTimeout(() => $('#lobby-link').textContent = link, 2000); };
   $('#btn-copy-code').onclick = () => { navigator.clipboard.writeText(state.roomCode); };
+
+  const lobbyChat = $('#lobby-chat-messages');
+  if (lobbyChat) lobbyChat.innerHTML = '';
 
   if (state.isHost) {
     $('#host-controls').classList.remove('hidden');
@@ -227,6 +236,11 @@ socket.on('game_started', ({ settings, players, spinnerIndex }) => {
   state.currentSpin = 0;
   state.spinnerIndex = spinnerIndex;
   state.phase = 'idle';
+
+  // Clear game chat messages for the new game!
+  const gameChat = $('#chat-messages');
+  if (gameChat) gameChat.innerHTML = '';
+
   showScreen('game');
   initGame();
 });
@@ -741,12 +755,6 @@ function checkRejoin() {
       state.selectedBottle = res.settings.bottle;
       state.mode = res.settings.mode;
 
-      if (res.messages) {
-        res.messages.forEach(msg => {
-          appendChatMessage(msg);
-        });
-      }
-
       if (res.gameStarted) {
         state.gameStarted = true;
         state.maxSpins = res.settings.mode;
@@ -754,6 +762,12 @@ function checkRejoin() {
         initGame();
       } else {
         enterLobby();
+      }
+
+      if (res.messages) {
+        res.messages.forEach(msg => {
+          appendChatMessage(msg);
+        });
       }
     });
   }
