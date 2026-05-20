@@ -768,7 +768,8 @@ document.addEventListener('keyup', (e) => {
 
 $('#btn-close-room')?.addEventListener('click', () => {
   if (!state.isHost) return;
-  if (confirm('Close this room? All data will be permanently destroyed.')) {
+  if (confirm('Close this room? All session data will be permanently wiped.')) {
+    alert("Don't worry, we don't save any of your data! Everything has been securely deleted.");
     socket.emit('terminate_room');
   }
 });
@@ -787,5 +788,8 @@ socket.on('room_closed', () => {
   state.roomCode = '';
   // Return to home
   showScreen('home');
-  alert('The host has closed the room. All data has been wiped.');
+  
+  if (!state.isHost) {
+    alert('The host has closed the room. All data has been wiped.');
+  }
 });

@@ -420,20 +420,8 @@ io.on('connection', (socket) => {
     const code = room.code;
     console.log(`🗑️  Room ${code} terminated by host — wiping all data`);
 
-    // Broadcast room_closed to all players BEFORE deleting
+    // Broadcast room_closed to all players
     io.to(code).emit('room_closed');
-
-    // Force-disconnect every socket in the room
-    const socketsInRoom = io.sockets.adapter.rooms.get(code);
-    if (socketsInRoom) {
-      for (const sid of [...socketsInRoom]) {
-        const s = io.sockets.sockets.get(sid);
-        if (s) {
-          s.leave(code);
-          s.disconnect(true);
-        }
-      }
-    }
 
     // Wipe all room data from memory
     room.players.length = 0;
