@@ -141,13 +141,13 @@ function enterLobby() {
 function renderLobbyPlayers() {
   const container = $('#lobby-players');
   container.innerHTML = state.players.map(p => `
-    <div class="flex items-center gap-3 p-2 rounded-lg ${p.id === socket.id ? 'bg-yellow-50' : ''}">
-      <div class="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm border-2 border-gray-800" style="background:${p.color}">
+    <div class="flex items-center gap-3 p-2 rounded-lg ${p.id === socket.id ? 'bg-yellow-50 dark:bg-yellow-950/30' : ''}">
+      <div class="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm border-2 border-gray-800 dark:border-zinc-700" style="background:${p.color}">
         ${p.name.charAt(0).toUpperCase()}
       </div>
       <span class="flex-1 font-semibold text-sm">${escHtml(p.name)}</span>
-      ${p.isHost ? '<span class="text-xs bg-purple-200 text-purple-700 px-2 py-0.5 rounded-full font-bold border border-purple-400">HOST</span>' : ''}
-      ${p.id === socket.id ? '<span class="text-xs text-gray-400">You</span>' : ''}
+      ${p.isHost ? '<span class="text-xs bg-purple-200 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded-full font-bold border border-purple-400 dark:border-purple-800">HOST</span>' : ''}
+      ${p.id === socket.id ? '<span class="text-xs text-gray-400 dark:text-zinc-500">You</span>' : ''}
     </div>
   `).join('');
 }
@@ -254,7 +254,7 @@ function renderPlayerCircle() {
     node.innerHTML = `
       <div class="player-avatar" style="background:${p.color}">${p.name.charAt(0).toUpperCase()}</div>
       <div class="player-name">${escHtml(p.name)}</div>
-      <div class="text-[0.55rem] text-gray-500">${p.score}pt</div>`;
+      <div class="text-[0.55rem] text-gray-500 dark:text-zinc-400">${p.score}pt</div>`;
     circle.appendChild(node);
   });
 }
@@ -585,7 +585,7 @@ function appendChatMessage(msg) {
     div.className = 'chat-msg';
     div.innerHTML = `
       <span class="msg-name" style="color:${msg.playerColor}">${escHtml(msg.playerName)}:</span>
-      <span class="text-gray-600">${escHtml(msg.text)}</span>`;
+      <span class="text-gray-600 dark:text-zinc-300">${escHtml(msg.text)}</span>`;
   }
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
@@ -723,19 +723,37 @@ $('#btn-close-room')?.addEventListener('click', () => {
   }
 });
 socket.on('room_closed', () => {
-  // Clear persistent session details
   sessionStorage.removeItem('spin_spill_name');
   sessionStorage.removeItem('spin_spill_code');
-  // Stop all camera/WebRTC
   stopAllMedia();
-  // Reset state
   state.gameStarted = false;
   state.phase = 'idle';
   state.players = [];
   state.roomCode = '';
-  // Return to home
   showScreen('home');
   if (!state.isHost) {
     alert('The host has closed the room. All data has been wiped.');
   }
 });
+const themeToggleBtn = $('#btn-theme-toggle');
+if (themeToggleBtn) {
+  const lightIcon = themeToggleBtn.querySelector('.theme-icon-light');
+  const darkIcon = themeToggleBtn.querySelector('.theme-icon-dark');
+  function updateThemeUI(isDark) {
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+      lightIcon?.classList.add('hidden');
+      darkIcon?.classList.remove('hidden');
+    } else {
+      document.documentElement.classList.remove('dark');
+      lightIcon?.classList.remove('hidden');
+      darkIcon?.classList.add('hidden');
+    }
+  }
+  updateThemeUI(document.documentElement.classList.contains('dark'));
+  themeToggleBtn.addEventListener('click', () => {
+    const isDark = document.documentElement.classList.toggle('dark');
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    updateThemeUI(isDark);
+  });
+}
