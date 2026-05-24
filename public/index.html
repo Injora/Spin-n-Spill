@@ -24,7 +24,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="stylesheet" href="/style.css" />
 </head>
-<body class="min-h-screen overflow-x-hidden">
+<body class="h-screen overflow-hidden">
   <button id="btn-theme-toggle" class="fixed top-4 right-4 z-[60] w-12 h-12 flex items-center justify-center btn-sketch bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 transition-colors" title="Toggle Theme">
     <span class="theme-icon-light text-xl">☀️</span>
     <span class="theme-icon-dark text-xl hidden">🌙</span>
@@ -114,7 +114,7 @@
       </div>
     </div>
   </section>
-  <section id="screen-game" class="screen flex-col min-h-screen">
+  <section id="screen-game" class="screen flex-col h-screen overflow-hidden">
     <header
       class="flex items-center justify-between px-4 py-3 bg-white/50 dark:bg-zinc-900/50 border-b border-gray-300 dark:border-zinc-700 z-30 shrink-0">
       <div class="flex items-center gap-2">
@@ -213,7 +213,7 @@
         </div>
       </div>
       <div id="chat-panel"
-        class="chat-panel-sketch lg:w-80 border-t lg:border-t-0 lg:border-l border-gray-300 dark:border-zinc-700 flex flex-col shrink-0 max-h-[40vh] lg:max-h-none">
+        class="chat-panel-sketch lg:w-80 border-t lg:border-t-0 lg:border-l border-gray-300 dark:border-zinc-700 flex flex-col shrink-0 max-h-[40vh] lg:max-h-full">
         <button id="btn-toggle-chat"
           class="lg:hidden flex items-center justify-center gap-2 py-2 text-gray-500 hover:text-gray-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition">
           <span>💬 Chat</span>
